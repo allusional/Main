@@ -1,5 +1,5 @@
 /* Offline cache for Bean Diary. Bump CACHE when files change. */
-const CACHE = 'bean-diary-v2';
+const CACHE = 'bean-diary-v3';
 const ASSETS = [
   '.',
   'index.html',
@@ -23,16 +23,15 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-/* Cache-first for app shell, fall back to network. */
+/* Network-first: always try to fetch the latest when online, fall back to the
+   cached copy only when offline. This guarantees updates show up promptly. */
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then((hit) =>
-      hit || fetch(e.request).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-        return res;
-      }).catch(() => caches.match('index.html'))
-    )
+    fetch(e.request).then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+      return res;
+    }).catch(() => caches.match(e.request).then((hit) => hit || caches.match('index.html')))
   );
 });
