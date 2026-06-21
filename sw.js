@@ -1,5 +1,5 @@
 /* Offline cache for Bean Diary. Bump CACHE when files change. */
-const CACHE = 'bean-diary-v1';
+const CACHE = 'bean-diary-v2';
 const ASSETS = [
   '.',
   'index.html',

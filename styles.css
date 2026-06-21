@@ -129,6 +129,7 @@ main { padding: 16px; max-width: 640px; margin: 0 auto; }
 }
 
 /* Modal */
+.modal[hidden] { display: none; }
 .modal {
   position: fixed; inset: 0;
   background: rgba(20, 12, 6, .45);
