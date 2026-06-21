@@ -26,14 +26,15 @@ stay private to you.
 
 ## 🚀 Get it onto your phone (one-time setup)
 
-### Step 1 — Turn on free hosting (GitHub Pages)
+### Step 1 — Let it publish (GitHub Pages turns on automatically)
 
-1. On GitHub, open this repository in your browser.
-2. Click **Settings** (top menu) → **Pages** (left sidebar).
-3. Under **Build and deployment → Source**, choose **GitHub Actions**.
-4. That's it. There's already a workflow in this repo that publishes the app.
+The included workflow enables GitHub Pages for you the first time it runs, so
+there's nothing to switch on by hand.
 
-### Step 2 — Let it publish
+> If your repo's settings block automatic enablement, you can do it manually:
+> **Settings → Pages → Source → GitHub Actions**, then re-run the workflow.
+
+### Step 2 — Watch it deploy
 
 1. Go to the **Actions** tab of the repo.
 2. You should see a run named *"Deploy Bean Diary to GitHub Pages"*. Wait for the
