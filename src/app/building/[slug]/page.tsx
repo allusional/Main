@@ -8,6 +8,7 @@ import {
   BUILDING_TYPE_LABELS,
   getBuildingBySlug,
   getCompanyBySlug,
+  reportedCostRange,
 } from "@/lib/data";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { ScoreBar } from "@/components/ScoreBar";
@@ -55,6 +56,9 @@ export default async function BuildingPage({
 
   const overall = buildingOverall(building.reviews);
   const averages = buildingDimensionAverages(building.reviews);
+  const costs = reportedCostRange(building.reviews);
+  const costLabel =
+    building.buildingType === "CONDO" ? "Maintenance fees" : "Rent";
   const company = building.companySlug
     ? await getCompanyBySlug(building.companySlug)
     : null;
@@ -125,6 +129,34 @@ export default async function BuildingPage({
             </dl>
           </div>
 
+          {/* Resident-reported costs (aggregated from reviews, not scraped). */}
+          <div>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+              {costLabel}
+            </h2>
+            {costs ? (
+              <p className="text-sm">
+                <span className="text-lg font-semibold">
+                  ${costs.min.toLocaleString()}–${costs.max.toLocaleString()}
+                </span>
+                <span className="text-black/55 dark:text-white/55">
+                  {" "}
+                  /mo · from {costs.count} resident report
+                  {costs.count === 1 ? "" : "s"}
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm text-black/55 dark:text-white/55">
+                No {costLabel.toLowerCase()} reported yet — be the first.
+              </p>
+            )}
+            {building.feesIncludes && building.feesIncludes.length > 0 && (
+              <p className="mt-1 text-xs text-black/55 dark:text-white/55">
+                Includes: {building.feesIncludes.join(", ")}
+              </p>
+            )}
+          </div>
+
           <MapEmbed
             lat={building.lat}
             lng={building.lng}
@@ -162,7 +194,7 @@ export default async function BuildingPage({
               title={r.title}
               body={r.body}
               author={r.author}
-              overall={buildingOverall([r])}
+              overall={r.overall}
               createdAt={r.createdAt}
               pros={r.pros}
               cons={r.cons}

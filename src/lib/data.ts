@@ -13,23 +13,32 @@ export const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {
   COOP: "Co-op",
 };
 
-// Building review dimensions (1–5).
+// Building review subrating dimensions (1–5). `overall` is captured separately
+// as an explicit reviewer-entered score, not a computed average.
 export type BuildingDimension =
-  | "management"
+  | "quality"
   | "noise"
   | "maintenance"
   | "amenities"
-  | "quality"
   | "safety"
+  | "management"
+  | "concierge"
+  | "location"
   | "value";
 
-export const BUILDING_DIMENSIONS: { key: BuildingDimension; label: string }[] = [
-  { key: "management", label: "Management & responsiveness" },
+export const BUILDING_DIMENSIONS: {
+  key: BuildingDimension;
+  label: string;
+  optional?: boolean;
+}[] = [
+  { key: "quality", label: "Building & unit quality" },
   { key: "noise", label: "Noise" },
   { key: "maintenance", label: "Maintenance & cleanliness" },
   { key: "amenities", label: "Amenities" },
-  { key: "quality", label: "Building & unit quality" },
   { key: "safety", label: "Safety & security" },
+  { key: "management", label: "Management quality & service" },
+  { key: "concierge", label: "Concierge quality & service", optional: true },
+  { key: "location", label: "Location & neighbourhood" },
   { key: "value", label: "Value for money" },
 ];
 
@@ -59,7 +68,12 @@ export interface BuildingReview {
   unitType?: string;
   tenure?: string;
   createdAt: string;
-  ratings: Record<BuildingDimension, number>;
+  /** Explicit overall score (1–5), not an average of the subratings. */
+  overall: number;
+  /** Resident-reported monthly cost: condo fee or rent. Powers cost ranges. */
+  monthlyCost?: number;
+  /** Subratings; `concierge` may be absent for buildings without one. */
+  ratings: Partial<Record<BuildingDimension, number>>;
 }
 
 export interface CompanyReview {
@@ -88,6 +102,8 @@ export interface Building {
   developer?: string;
   companySlug?: string;
   amenities: string[];
+  /** What the condo fee / rent includes (building-level fact). */
+  feesIncludes?: string[];
   reviews: BuildingReview[];
 }
 
@@ -108,27 +124,47 @@ function avg(nums: number[]): number {
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
-/** Overall building score: mean of every dimension across every review. */
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** Overall building score: mean of each review's explicit overall. */
 export function buildingOverall(reviews: BuildingReview[]): number {
-  const all = reviews.flatMap((r) => BUILDING_DIMENSIONS.map((d) => r.ratings[d.key]));
-  return Math.round(avg(all) * 10) / 10;
+  return round1(avg(reviews.map((r) => r.overall)));
 }
 
-/** Per-dimension averages for a building. */
+/**
+ * Per-dimension averages. Dimensions with no data (e.g. concierge in a building
+ * without one) are omitted, so they read as N/A rather than dragging scores.
+ */
 export function buildingDimensionAverages(
   reviews: BuildingReview[],
-): Record<BuildingDimension, number> {
-  const out = {} as Record<BuildingDimension, number>;
+): Partial<Record<BuildingDimension, number>> {
+  const out: Partial<Record<BuildingDimension, number>> = {};
   for (const d of BUILDING_DIMENSIONS) {
-    out[d.key] = Math.round(avg(reviews.map((r) => r.ratings[d.key])) * 10) / 10;
+    const values = reviews
+      .map((r) => r.ratings[d.key])
+      .filter((n): n is number => typeof n === "number");
+    if (values.length) out[d.key] = round1(avg(values));
   }
   return out;
 }
 
+/** Resident-reported cost range, or null if nobody has reported one. */
+export function reportedCostRange(
+  reviews: BuildingReview[],
+): { min: number; max: number; count: number } | null {
+  const costs = reviews
+    .map((r) => r.monthlyCost)
+    .filter((n): n is number => typeof n === "number");
+  if (!costs.length) return null;
+  return { min: Math.min(...costs), max: Math.max(...costs), count: costs.length };
+}
+
 /** Overall company score: mean of every dimension across every company review. */
 export function companyOverall(reviews: CompanyReview[]): number {
-  const all = reviews.flatMap((r) => COMPANY_DIMENSIONS.map((d) => r.ratings[d.key]));
-  return Math.round(avg(all) * 10) / 10;
+  const all = reviews.flatMap((r) =>
+    COMPANY_DIMENSIONS.map((d) => r.ratings[d.key]),
+  );
+  return round1(avg(all));
 }
 
 export function companyDimensionAverages(
@@ -136,7 +172,7 @@ export function companyDimensionAverages(
 ): Record<CompanyDimension, number> {
   const out = {} as Record<CompanyDimension, number>;
   for (const d of COMPANY_DIMENSIONS) {
-    out[d.key] = Math.round(avg(reviews.map((r) => r.ratings[d.key])) * 10) / 10;
+    out[d.key] = round1(avg(reviews.map((r) => r.ratings[d.key])));
   }
   return out;
 }
@@ -236,9 +272,11 @@ export async function companyManagementAcrossBuildings(
   companySlug: string,
 ): Promise<{ score: number; buildingCount: number }> {
   const buildings = BUILDINGS.filter((b) => b.companySlug === companySlug);
-  const scores = buildings.flatMap((b) => b.reviews.map((r) => r.ratings.management));
+  const scores = buildings
+    .flatMap((b) => b.reviews.map((r) => r.ratings.management))
+    .filter((n): n is number => typeof n === "number");
   return {
-    score: scores.length ? Math.round(avg(scores) * 10) / 10 : 0,
+    score: scores.length ? round1(avg(scores)) : 0,
     buildingCount: buildings.length,
   };
 }
@@ -375,6 +413,7 @@ const BUILDINGS: Building[] = [
     developer: "Waterfront Developments",
     companySlug: "summit-residential",
     amenities: ["Gym", "Pool", "Concierge", "Rooftop Terrace", "Visitor Parking", "Bike Storage"],
+    feesIncludes: ["Heat", "Water", "Building insurance", "24/7 concierge"],
     reviews: [
       {
         id: "r1",
@@ -386,7 +425,9 @@ const BUILDINGS: Building[] = [
         unitType: "1 bed + den",
         tenure: "2021–present",
         createdAt: "2026-02-11",
-        ratings: { management: 4, noise: 2, maintenance: 4, amenities: 5, quality: 4, safety: 4, value: 3 },
+        overall: 4,
+        monthlyCost: 720,
+        ratings: { quality: 4, noise: 2, maintenance: 4, amenities: 5, safety: 4, management: 4, concierge: 4, location: 5, value: 3 },
       },
       {
         id: "r2",
@@ -398,7 +439,9 @@ const BUILDINGS: Building[] = [
         unitType: "2 bed",
         tenure: "2019–2023",
         createdAt: "2025-09-18",
-        ratings: { management: 4, noise: 3, maintenance: 5, amenities: 5, quality: 4, safety: 5, value: 3 },
+        overall: 4,
+        monthlyCost: 1010,
+        ratings: { quality: 4, noise: 3, maintenance: 5, amenities: 5, safety: 5, management: 4, concierge: 5, location: 5, value: 3 },
       },
     ],
   },
@@ -418,6 +461,7 @@ const BUILDINGS: Building[] = [
     developer: "Yonge Heights Group",
     companySlug: "anchor-property",
     amenities: ["Gym", "Sauna", "Party Room", "Visitor Parking", "Locker"],
+    feesIncludes: ["Heat", "Water"],
     reviews: [
       {
         id: "r3",
@@ -429,7 +473,9 @@ const BUILDINGS: Building[] = [
         unitType: "2 bed",
         tenure: "2020–present",
         createdAt: "2026-01-20",
-        ratings: { management: 2, noise: 4, maintenance: 3, amenities: 3, quality: 4, safety: 4, value: 4 },
+        overall: 3,
+        monthlyCost: 880,
+        ratings: { quality: 4, noise: 4, maintenance: 3, amenities: 3, safety: 4, management: 2, location: 4, value: 4 },
       },
       {
         id: "r4",
@@ -439,7 +485,9 @@ const BUILDINGS: Building[] = [
         unitType: "1 bed",
         tenure: "2018–2022",
         createdAt: "2025-06-30",
-        ratings: { management: 3, noise: 5, maintenance: 3, amenities: 3, quality: 3, safety: 4, value: 4 },
+        overall: 3,
+        monthlyCost: 560,
+        ratings: { quality: 3, noise: 5, maintenance: 3, amenities: 3, safety: 4, management: 3, location: 4, value: 4 },
       },
     ],
   },
@@ -459,6 +507,7 @@ const BUILDINGS: Building[] = [
     developer: "Old Town Lofts Inc.",
     companySlug: "beacon-management",
     amenities: ["Concierge", "Rooftop Terrace", "Co-working Space", "Pet Spa", "Bike Storage"],
+    feesIncludes: ["Heat", "Water", "Building insurance"],
     reviews: [
       {
         id: "r5",
@@ -470,7 +519,9 @@ const BUILDINGS: Building[] = [
         unitType: "Loft",
         tenure: "2022–present",
         createdAt: "2026-03-02",
-        ratings: { management: 5, noise: 3, maintenance: 5, amenities: 3, quality: 4, safety: 4, value: 4 },
+        overall: 4,
+        monthlyCost: 640,
+        ratings: { quality: 4, noise: 3, maintenance: 5, amenities: 3, safety: 4, management: 5, concierge: 5, location: 5, value: 4 },
       },
     ],
   },
@@ -490,6 +541,7 @@ const BUILDINGS: Building[] = [
     developer: "Liberty Village Rentals",
     companySlug: "summit-residential",
     amenities: ["Gym", "Co-working Space", "Pet Spa", "Rooftop Terrace", "EV Charging", "Bike Storage"],
+    feesIncludes: ["Water", "Heat"],
     reviews: [
       {
         id: "r6",
@@ -501,7 +553,9 @@ const BUILDINGS: Building[] = [
         unitType: "Studio",
         tenure: "2023–present",
         createdAt: "2026-04-09",
-        ratings: { management: 4, noise: 2, maintenance: 4, amenities: 5, quality: 4, safety: 4, value: 2 },
+        overall: 3,
+        monthlyCost: 2200,
+        ratings: { quality: 4, noise: 2, maintenance: 4, amenities: 5, safety: 4, management: 4, location: 5, value: 2 },
       },
     ],
   },
@@ -521,6 +575,7 @@ const BUILDINGS: Building[] = [
     developer: "Markham Skyline Corp.",
     companySlug: "anchor-property",
     amenities: ["Gym", "Pool", "Party Room", "Guest Suite", "Visitor Parking"],
+    feesIncludes: ["Heat", "Water", "Central air"],
     reviews: [
       {
         id: "r7",
@@ -532,7 +587,9 @@ const BUILDINGS: Building[] = [
         unitType: "3 bed",
         tenure: "2017–present",
         createdAt: "2025-12-01",
-        ratings: { management: 3, noise: 4, maintenance: 4, amenities: 4, quality: 4, safety: 5, value: 4 },
+        overall: 4,
+        monthlyCost: 950,
+        ratings: { quality: 4, noise: 4, maintenance: 4, amenities: 4, safety: 5, management: 3, location: 3, value: 4 },
       },
     ],
   },
@@ -552,6 +609,7 @@ const BUILDINGS: Building[] = [
     developer: "Square One Rentals",
     companySlug: "beacon-management",
     amenities: ["Gym", "Pool", "Sauna", "Visitor Parking", "Locker"],
+    feesIncludes: ["Heat", "Water"],
     reviews: [
       {
         id: "r8",
@@ -563,7 +621,9 @@ const BUILDINGS: Building[] = [
         unitType: "2 bed",
         tenure: "2019–present",
         createdAt: "2026-02-27",
-        ratings: { management: 4, noise: 3, maintenance: 4, amenities: 3, quality: 3, safety: 4, value: 5 },
+        overall: 4,
+        monthlyCost: 2650,
+        ratings: { quality: 3, noise: 3, maintenance: 4, amenities: 3, safety: 4, management: 4, location: 4, value: 5 },
       },
     ],
   },
@@ -583,6 +643,7 @@ const BUILDINGS: Building[] = [
     developer: "City Centre Towers",
     companySlug: "summit-residential",
     amenities: ["Gym", "Pool", "Concierge", "EV Charging", "Rooftop Terrace", "Co-working Space", "Pet Spa"],
+    feesIncludes: ["Water", "Building insurance", "24/7 concierge"],
     reviews: [
       {
         id: "r9",
@@ -594,7 +655,9 @@ const BUILDINGS: Building[] = [
         unitType: "1 bed",
         tenure: "2023–present",
         createdAt: "2025-11-03",
-        ratings: { management: 4, noise: 4, maintenance: 4, amenities: 5, quality: 4, safety: 5, value: 4 },
+        overall: 5,
+        monthlyCost: 590,
+        ratings: { quality: 4, noise: 4, maintenance: 4, amenities: 5, safety: 5, management: 4, concierge: 4, location: 4, value: 4 },
       },
     ],
   },
@@ -614,6 +677,7 @@ const BUILDINGS: Building[] = [
     developer: "West End Living",
     companySlug: "anchor-property",
     amenities: ["Gym", "Party Room", "Bike Storage", "Visitor Parking"],
+    feesIncludes: ["Heat", "Water"],
     reviews: [
       {
         id: "r10",
@@ -625,7 +689,9 @@ const BUILDINGS: Building[] = [
         unitType: "1 bed + den",
         tenure: "2020–present",
         createdAt: "2026-01-05",
-        ratings: { management: 2, noise: 3, maintenance: 3, amenities: 2, quality: 3, safety: 3, value: 3 },
+        overall: 3,
+        monthlyCost: 610,
+        ratings: { quality: 3, noise: 3, maintenance: 3, amenities: 2, safety: 3, management: 2, location: 5, value: 3 },
       },
     ],
   },
