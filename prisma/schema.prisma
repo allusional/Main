@@ -1,0 +1,231 @@
+// RateMyCondo — Prisma schema
+// Docs: https://pris.ly/d/prisma-schema
+//
+// PostGIS: the `Building.geom` column uses a PostGIS `geography` type via
+// `Unsupported`. Before the first migration, PostGIS must be enabled on the
+// database (Supabase: `create extension if not exists postgis;`). Geo queries
+// (map-bounds / radius search) are run via `prisma.$queryRaw`.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URLs live in `prisma.config.ts` (Prisma 7). Supabase:
+  // DATABASE_URL -> pooler (pgbouncer); DIRECT_URL -> direct conn for migrations.
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum BuildingType {
+  CONDO
+  RENTAL
+  COOP
+}
+
+enum SourceType {
+  GOOGLE
+  OSM
+  USER
+}
+
+enum ReviewTarget {
+  BUILDING
+  COMPANY
+}
+
+enum ReviewStatus {
+  PENDING
+  PUBLISHED
+  REJECTED
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+/// Application user. `id` mirrors the Supabase Auth user UUID (auth.users.id).
+model User {
+  id          String    @id @db.Uuid
+  email       String    @unique
+  displayName String?
+  role        Role      @default(USER)
+  bannedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  reviews        Review[]
+  reviewVotes    ReviewVote[]
+  reports        Report[]        @relation("ReportReporter")
+  moderations    ModerationLog[]
+  claimedBuildings Building[]    @relation("BuildingClaimer")
+
+  @@map("users")
+}
+
+/// Property management company — a first-class reviewable entity. Its score is
+/// also informed by the management ratings rolled up across its buildings.
+model MgmtCompany {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  name      String
+  website   String?
+  createdAt DateTime @default(now())
+
+  buildings Building[]
+  reviews   Review[]
+
+  @@map("mgmt_companies")
+}
+
+model Building {
+  id            String       @id @default(uuid()) @db.Uuid
+  slug          String       @unique
+  name          String
+  address       String
+  city          String
+  postalCode    String?
+  lat           Float
+  lng           Float
+  // PostGIS geography(Point, 4326) — populated from lat/lng for spatial queries.
+  geom          Unsupported("geography(Point, 4326)")?
+  buildingType  BuildingType @default(CONDO)
+  yearBuilt     Int?
+  numUnits      Int?
+  numFloors     Int?
+  developer     String?
+  googlePlaceId String?      @unique
+  source        SourceType   @default(USER)
+
+  mgmtCompanyId String?      @db.Uuid
+  mgmtCompany   MgmtCompany? @relation(fields: [mgmtCompanyId], references: [id])
+
+  claimedById   String?      @db.Uuid
+  claimedBy     User?        @relation("BuildingClaimer", fields: [claimedById], references: [id])
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  amenities BuildingAmenity[]
+  reviews   Review[]
+
+  @@index([mgmtCompanyId])
+  @@map("buildings")
+}
+
+model Amenity {
+  id   String @id @default(uuid()) @db.Uuid
+  name String @unique
+  icon String?
+
+  buildings BuildingAmenity[]
+
+  @@map("amenities")
+}
+
+model BuildingAmenity {
+  buildingId String   @db.Uuid
+  amenityId  String   @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  amenity    Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([buildingId, amenityId])
+  @@map("building_amenities")
+}
+
+/// A review targets EITHER a building OR a management company. Exactly one of
+/// `buildingId` / `companyId` is set (enforced in app + a DB check constraint
+/// added in migration). `target` indexes which kind it is.
+model Review {
+  id       String       @id @default(uuid()) @db.Uuid
+  target   ReviewTarget
+  authorId String       @db.Uuid
+  author   User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  buildingId String?   @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  companyId  String?      @db.Uuid
+  company    MgmtCompany? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Building rating dimensions (1–5); null for company reviews.
+  rManagement  Int?
+  rNoise       Int?
+  rMaintenance Int?
+  rAmenities   Int?
+  rQuality     Int?
+  rSafety      Int?
+  rValue       Int?
+
+  // Company rating dimensions (1–5); null for building reviews.
+  cResponsiveness Int?
+  cTransparency   Int?
+  cFairness       Int?
+  cCommunication  Int?
+  cResolution     Int?
+
+  overall   Float
+  title     String
+  body      String
+  pros      String?
+  cons      String?
+  unitType  String?
+  tenureStart DateTime?
+  tenureEnd   DateTime?
+  rentBand    String?
+
+  status    ReviewStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  votes   ReviewVote[]
+  reports Report[]
+
+  @@index([buildingId, status])
+  @@index([companyId, status])
+  @@map("reviews")
+}
+
+model ReviewVote {
+  reviewId String   @db.Uuid
+  userId   String   @db.Uuid
+  helpful  Boolean
+  review   Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([reviewId, userId])
+  @@map("review_votes")
+}
+
+model Report {
+  id         String       @id @default(uuid()) @db.Uuid
+  reviewId   String       @db.Uuid
+  review     Review       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reporterId String       @db.Uuid
+  reporter   User         @relation("ReportReporter", fields: [reporterId], references: [id])
+  reason     String
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+
+  @@index([status])
+  @@map("reports")
+}
+
+model ModerationLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  reviewId  String   @db.Uuid
+  adminId   String   @db.Uuid
+  admin     User     @relation(fields: [adminId], references: [id])
+  action    String
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([reviewId])
+  @@map("moderation_log")
+}
