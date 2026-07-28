@@ -62,7 +62,10 @@ async function networkFirst(request) {
     }
     return res;
   } catch (networkErr) {
-    const hit = (await caches.match(request)) || (await caches.match('index.html'));
+    /* The app shell only substitutes for a page load; serving it for a missing
+       script or icon would hide the failure behind a 200. */
+    const hit = (await caches.match(request))
+      || (request.mode === 'navigate' ? await caches.match('index.html') : undefined);
     if (hit) return hit;
     console.error(`[sw] offline and nothing cached for ${request.url}`, networkErr);
     return new Response('Bean Diary is offline and this resource is not cached.', {
