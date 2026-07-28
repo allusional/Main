@@ -193,3 +193,20 @@ form input[type=text], form input[type=date], form select, form textarea {
   background: none; color: var(--danger); border: 1px solid var(--danger);
   padding: 14px 18px; border-radius: 14px; font-size: 15px; font-weight: 600;
 }
+
+/* Error toast */
+.toast {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 30;
+  background: var(--danger);
+  color: #fff;
+  padding: 13px 16px;
+  border-radius: 14px;
+  font-size: 15px;
+  line-height: 1.35;
+  box-shadow: var(--shadow);
+}
+.toast[hidden] { display: none; }

@@ -2,15 +2,69 @@
    All data lives in the browser via localStorage, so it stays on the phone. */
 
 const STORE_KEY = 'bean-diary-entries-v1';
+const BACKUP_KEY_PREFIX = 'bean-diary-unreadable-';
+
+/* ---------- user-visible errors ---------- */
+let toastTimer = null;
+function reportError(message, error) {
+  console.error(message, error);
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+}
+
+window.addEventListener('error', (ev) => {
+  reportError('Something went wrong. Your last action may not have been saved.', ev.error || ev.message);
+});
+window.addEventListener('unhandledrejection', (ev) => {
+  reportError('Something went wrong. Your last action may not have been saved.', ev.reason);
+});
 
 /* ---------- data helpers ---------- */
 function loadEntries() {
+  let raw;
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || [];
-  } catch {
+    raw = localStorage.getItem(STORE_KEY);
+  } catch (err) {
+    reportError('Cannot read your saved entries — browser storage is unavailable.', err);
     return [];
   }
+  if (raw === null) return [];
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    quarantine(raw, err);
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    quarantine(raw, new TypeError(`expected an array, got ${typeof parsed}`));
+    return [];
+  }
+  return parsed;
 }
+
+/* Keep unreadable data around instead of letting the next save overwrite it. */
+function quarantine(raw, err) {
+  let kept = false;
+  try {
+    localStorage.setItem(BACKUP_KEY_PREFIX + Date.now(), raw);
+    kept = true;
+  } catch (backupErr) {
+    console.error('Could not back up unreadable entries', backupErr);
+  }
+  reportError(
+    kept
+      ? 'Your saved entries could not be read; a copy was kept in browser storage.'
+      : 'Your saved entries could not be read and could not be backed up.',
+    err
+  );
+}
+
 function saveEntries(entries) {
   localStorage.setItem(STORE_KEY, JSON.stringify(entries));
 }
@@ -114,7 +168,9 @@ function openModal(entry) {
   if (entry) {
     $('form-title').textContent = 'Edit entry';
     $('entry-id').value = entry.id;
-    document.querySelector(`input[name=type][value=${entry.type}]`).checked = true;
+    const typeRadio = document.querySelector(`input[name=type][value="${CSS.escape(entry.type || '')}"]`)
+      || $('type-cafe');
+    typeRadio.checked = true;
     $('f-bean').value = entry.bean || '';
     $('f-roaster').value = entry.roaster || '';
     $('f-cafe').value = entry.cafe || '';
@@ -162,25 +218,42 @@ formEl.addEventListener('submit', (ev) => {
     notes: $('f-notes').value.trim(),
     rating: currentRating,
   };
+  const previous = entries;
   if (id) {
     const i = entries.findIndex((e) => e.id === id);
-    if (i > -1) entries[i] = { ...entries[i], ...data };
+    if (i < 0) {
+      reportError('That entry no longer exists, so it could not be saved.');
+      return;
+    }
+    entries = entries.map((e, idx) => (idx === i ? { ...e, ...data } : e));
   } else {
-    entries.push({ id: 'e' + Date.now().toString(36), created: Date.now(), ...data });
+    entries = [...entries, { id: 'e' + Date.now().toString(36), created: Date.now(), ...data }];
   }
-  saveEntries(entries);
+  try {
+    saveEntries(entries);
+  } catch (err) {
+    entries = previous;
+    reportError('Could not save your entry — browser storage is full or unavailable.', err);
+    return;
+  }
   render();
   closeModal();
 });
 
 $('delete-btn').addEventListener('click', () => {
   const id = $('entry-id').value;
-  if (id && confirm('Delete this entry?')) {
-    entries = entries.filter((e) => e.id !== id);
+  if (!id || !confirm('Delete this entry?')) return;
+  const previous = entries;
+  entries = entries.filter((e) => e.id !== id);
+  try {
     saveEntries(entries);
-    render();
-    closeModal();
+  } catch (err) {
+    entries = previous;
+    reportError('Could not delete your entry — browser storage is unavailable.', err);
+    return;
   }
+  render();
+  closeModal();
 });
 
 /* ---------- wiring ---------- */
@@ -189,7 +262,14 @@ $('close-btn').addEventListener('click', closeModal);
 modalEl.addEventListener('click', (ev) => { if (ev.target === modalEl) closeModal(); });
 listEl.addEventListener('click', (ev) => {
   const li = ev.target.closest('.entry');
-  if (li) openModal(entries.find((e) => e.id === li.dataset.id));
+  if (!li) return;
+  const entry = entries.find((e) => e.id === li.dataset.id);
+  if (!entry) {
+    reportError('That entry could not be found. Refreshing the list.');
+    render();
+    return;
+  }
+  openModal(entry);
 });
 searchEl.addEventListener('input', render);
 filterEl.addEventListener('change', render);
@@ -204,17 +284,24 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 installBtn.addEventListener('click', async () => {
   if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  installBtn.hidden = true;
+  try {
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    installBtn.hidden = true;
+  } catch (err) {
+    reportError('The install prompt could not be shown. Use your browser menu to install.', err);
+  } finally {
+    deferredPrompt = null;
+  }
 });
 window.addEventListener('appinstalled', () => { installBtn.hidden = true; });
 
 /* ---------- service worker ---------- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').catch((err) => {
+      reportError('Offline mode is unavailable — the service worker failed to register.', err);
+    });
   });
 }
 
