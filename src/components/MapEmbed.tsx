@@ -26,6 +26,8 @@ export function MapEmbed({
       title={label ? `Map of ${label}` : "Map"}
       src={src}
       loading="lazy"
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
       className={`w-full rounded-xl border border-black/10 dark:border-white/10 ${className}`}
     />
   );
