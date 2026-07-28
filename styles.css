@@ -8,11 +8,28 @@
   --accent: #c98a3c;
   --star: #e0a93b;
   --danger: #c0392b;
+  --field-border: #e3d8cc;
   --shadow: 0 2px 10px rgba(59, 36, 24, .12);
   --radius: 16px;
 }
 
 * { box-sizing: border-box; }
+
+/* Shared surfaces and inputs */
+.stat, .entry {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.toolbar input, .toolbar select,
+form input[type=text], form input[type=date], form select, form textarea {
+  font-size: 16px;
+  padding: 11px 12px;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+}
 
 html, body {
   margin: 0;
@@ -61,34 +78,20 @@ main { padding: 16px; max-width: 640px; margin: 0 auto; }
   margin-bottom: 16px;
 }
 .stat {
-  background: var(--card);
-  border-radius: var(--radius);
   padding: 14px 8px;
   text-align: center;
-  box-shadow: var(--shadow);
 }
 .stat-num { display: block; font-size: 22px; font-weight: 800; color: var(--brand-2); }
 .stat-label { font-size: 12px; color: var(--muted); }
 
 /* Toolbar */
 .toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
-.toolbar input, .toolbar select {
-  font-size: 16px;
-  padding: 11px 12px;
-  border: 1px solid #e3d8cc;
-  border-radius: 12px;
-  background: var(--card);
-  color: var(--ink);
-}
 .toolbar input { flex: 1; }
 
 /* Entry list */
 .entry-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .entry {
-  background: var(--card);
-  border-radius: var(--radius);
   padding: 14px 16px;
-  box-shadow: var(--shadow);
   cursor: pointer;
   border-left: 5px solid var(--accent);
 }
@@ -158,12 +161,6 @@ form label { display: block; font-size: 13px; color: var(--muted); font-weight: 
 form input[type=text], form input[type=date], form select, form textarea {
   width: 100%;
   margin-top: 6px;
-  font-size: 16px;
-  padding: 11px 12px;
-  border: 1px solid #e3d8cc;
-  border-radius: 12px;
-  background: var(--card);
-  color: var(--ink);
   font-family: inherit;
 }
 .row { display: flex; gap: 12px; }
