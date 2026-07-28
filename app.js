@@ -63,7 +63,7 @@ function render() {
       e.price ? `<span class="tag">$${escapeHtml(e.price)}</span>` : '',
     ].join('');
     return `
-      <li class="entry ${e.type}" data-id="${e.id}">
+      <li class="entry ${e.type === 'home' ? 'home' : 'cafe'}" data-id="${escapeHtml(e.id)}">
         <div class="entry-top">
           <span class="entry-bean">${escapeHtml(e.bean)}</span>
           <span class="entry-stars">${starString(e.rating || 0)}</span>
@@ -114,7 +114,8 @@ function openModal(entry) {
   if (entry) {
     $('form-title').textContent = 'Edit entry';
     $('entry-id').value = entry.id;
-    document.querySelector(`input[name=type][value=${entry.type}]`).checked = true;
+    const type = entry.type === 'home' ? 'home' : 'cafe';
+    document.querySelector(`input[name=type][value="${type}"]`).checked = true;
     $('f-bean').value = entry.bean || '';
     $('f-roaster').value = entry.roaster || '';
     $('f-cafe').value = entry.cafe || '';
