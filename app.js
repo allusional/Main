@@ -29,9 +29,44 @@ const cafeField = $('cafe-field');
 
 let currentRating = 0;
 
+/* Form fields shared by the populate (openModal) and collect (submit) paths.
+   `trim` marks free-text inputs; `fallback` is the value used when empty. */
+const FIELDS = [
+  { key: 'bean', trim: true },
+  { key: 'roaster', trim: true },
+  { key: 'cafe', trim: true },
+  { key: 'origin', trim: true },
+  { key: 'method', fallback: 'Espresso' },
+  { key: 'roast' },
+  { key: 'price', trim: true },
+  { key: 'date' },
+  { key: 'notes', trim: true },
+];
+const fieldEl = (key) => $('f-' + key);
+const selectedType = () => document.querySelector('input[name=type]:checked').value;
+
+function fillForm(entry) {
+  FIELDS.forEach(({ key, fallback }) => {
+    fieldEl(key).value = entry[key] || fallback || '';
+  });
+}
+
+function readForm() {
+  const data = { type: selectedType(), rating: currentRating };
+  FIELDS.forEach(({ key, trim }) => {
+    const value = fieldEl(key).value;
+    data[key] = trim ? value.trim() : value;
+  });
+  return data;
+}
+
 /* ---------- rendering ---------- */
 function starString(n) {
   return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+}
+
+function tag(text, cls = '') {
+  return text ? `<span class="tag ${cls}">${escapeHtml(text)}</span>` : '';
 }
 
 function escapeHtml(s) {
@@ -56,11 +91,12 @@ function render() {
   listEl.innerHTML = visible.map((e) => {
     const place = e.type === 'cafe' ? (e.cafe || 'Café') : 'Home brew';
     const bits = [e.roaster, e.origin, place].filter(Boolean).join(' · ');
+    const isHome = e.type === 'home';
     const tags = [
-      `<span class="tag type ${e.type === 'home' ? 'home' : ''}">${e.type === 'home' ? 'Home' : 'Café'}</span>`,
-      e.method ? `<span class="tag">${escapeHtml(e.method)}</span>` : '',
-      e.roast ? `<span class="tag">${escapeHtml(e.roast)}</span>` : '',
-      e.price ? `<span class="tag">$${escapeHtml(e.price)}</span>` : '',
+      tag(isHome ? 'Home' : 'Café', isHome ? 'type home' : 'type'),
+      tag(e.method),
+      tag(e.roast),
+      e.price ? tag('$' + e.price) : '',
     ].join('');
     return `
       <li class="entry ${e.type}" data-id="${e.id}">
@@ -115,21 +151,13 @@ function openModal(entry) {
     $('form-title').textContent = 'Edit entry';
     $('entry-id').value = entry.id;
     document.querySelector(`input[name=type][value=${entry.type}]`).checked = true;
-    $('f-bean').value = entry.bean || '';
-    $('f-roaster').value = entry.roaster || '';
-    $('f-cafe').value = entry.cafe || '';
-    $('f-origin').value = entry.origin || '';
-    $('f-method').value = entry.method || 'Espresso';
-    $('f-roast').value = entry.roast || '';
-    $('f-price').value = entry.price || '';
-    $('f-date').value = entry.date || '';
-    $('f-notes').value = entry.notes || '';
+    fillForm(entry);
     setRating(entry.rating || 0);
     $('delete-btn').hidden = false;
   } else {
     $('form-title').textContent = 'New entry';
     $('entry-id').value = '';
-    $('f-date').value = new Date().toISOString().slice(0, 10);
+    fieldEl('date').value = new Date().toISOString().slice(0, 10);
     setRating(0);
     $('delete-btn').hidden = true;
   }
@@ -139,47 +167,36 @@ function openModal(entry) {
 function closeModal() { modalEl.hidden = true; }
 
 function updateTypeFields() {
-  const isCafe = document.querySelector('input[name=type]:checked').value === 'cafe';
-  cafeField.style.display = isCafe ? '' : 'none';
+  cafeField.style.display = selectedType() === 'cafe' ? '' : 'none';
 }
 document.querySelectorAll('input[name=type]').forEach((r) =>
   r.addEventListener('change', updateTypeFields));
 
 /* ---------- save / delete ---------- */
+function commit() {
+  saveEntries(entries);
+  render();
+  closeModal();
+}
+
 formEl.addEventListener('submit', (ev) => {
   ev.preventDefault();
   const id = $('entry-id').value;
-  const data = {
-    type: document.querySelector('input[name=type]:checked').value,
-    bean: $('f-bean').value.trim(),
-    roaster: $('f-roaster').value.trim(),
-    cafe: $('f-cafe').value.trim(),
-    origin: $('f-origin').value.trim(),
-    method: $('f-method').value,
-    roast: $('f-roast').value,
-    price: $('f-price').value.trim(),
-    date: $('f-date').value,
-    notes: $('f-notes').value.trim(),
-    rating: currentRating,
-  };
+  const data = readForm();
   if (id) {
     const i = entries.findIndex((e) => e.id === id);
     if (i > -1) entries[i] = { ...entries[i], ...data };
   } else {
     entries.push({ id: 'e' + Date.now().toString(36), created: Date.now(), ...data });
   }
-  saveEntries(entries);
-  render();
-  closeModal();
+  commit();
 });
 
 $('delete-btn').addEventListener('click', () => {
   const id = $('entry-id').value;
   if (id && confirm('Delete this entry?')) {
     entries = entries.filter((e) => e.id !== id);
-    saveEntries(entries);
-    render();
-    closeModal();
+    commit();
   }
 });
 
