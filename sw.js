@@ -1,9 +1,10 @@
 /* Offline cache for Bean Diary. Bump CACHE when files change. */
-const CACHE = 'bean-diary-v3';
+const CACHE = 'bean-diary-v4';
 const ASSETS = [
   '.',
   'index.html',
   'styles.css',
+  'core.js',
   'app.js',
   'manifest.webmanifest',
   'icons/icon.svg',

@@ -2,14 +2,11 @@
    All data lives in the browser via localStorage, so it stays on the phone. */
 
 const STORE_KEY = 'bean-diary-entries-v1';
+const { starString, escapeHtml, parseEntries, filterEntries, computeStats } = window.BeanDiaryCore;
 
 /* ---------- data helpers ---------- */
 function loadEntries() {
-  try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || [];
-  } catch {
-    return [];
-  }
+  return parseEntries(localStorage.getItem(STORE_KEY));
 }
 function saveEntries(entries) {
   localStorage.setItem(STORE_KEY, JSON.stringify(entries));
@@ -30,28 +27,8 @@ const cafeField = $('cafe-field');
 let currentRating = 0;
 
 /* ---------- rendering ---------- */
-function starString(n) {
-  return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
-}
-
-function escapeHtml(s) {
-  return (s || '').replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-  ));
-}
-
 function render() {
-  const q = searchEl.value.trim().toLowerCase();
-  const typeFilter = filterEl.value;
-
-  const visible = entries
-    .filter((e) => !typeFilter || e.type === typeFilter)
-    .filter((e) => {
-      if (!q) return true;
-      return [e.bean, e.roaster, e.cafe, e.origin, e.method, e.notes]
-        .filter(Boolean).join(' ').toLowerCase().includes(q);
-    })
-    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.created - a.created);
+  const visible = filterEntries(entries, { query: searchEl.value, type: filterEl.value });
 
   listEl.innerHTML = visible.map((e) => {
     const place = e.type === 'cafe' ? (e.cafe || 'Café') : 'Home brew';
@@ -86,15 +63,10 @@ function render() {
 }
 
 function renderStats() {
-  $('stat-count').textContent = entries.length;
-  const rated = entries.filter((e) => e.rating);
-  $('stat-avg').textContent = rated.length
-    ? (rated.reduce((s, e) => s + e.rating, 0) / rated.length).toFixed(1)
-    : '–';
-  const counts = {};
-  entries.forEach((e) => { if (e.method) counts[e.method] = (counts[e.method] || 0) + 1; });
-  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  $('stat-fav').textContent = top ? top[0] : '–';
+  const stats = computeStats(entries);
+  $('stat-count').textContent = stats.count;
+  $('stat-avg').textContent = stats.avg;
+  $('stat-fav').textContent = stats.favMethod;
 }
 
 /* ---------- star input ---------- */
