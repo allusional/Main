@@ -1,0 +1,11 @@
+{
+  "name": "bean-diary",
+  "version": "1.0.0",
+  "description": "A tiny offline coffee journal PWA.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
+  }
+}
